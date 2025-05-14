@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>College Timetable</title>
+    <title>College Timetable Admin</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,12 +11,24 @@
             background-color: #f4f4f4;
             margin: 20px;
         }
+        .container {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px;
+            gap: 20px;
+        }
+        .timetable-section, .history-section {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
         table {
-            width: 80%;
+            width: 100%;
             margin: 20px auto;
             border-collapse: collapse;
             background: white;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
         th, td {
             padding: 10px;
@@ -34,33 +45,132 @@
             border: none;
             cursor: pointer;
             font-size: 16px;
+            border-radius: 4px;
         }
         .edit-btn { background: #f39c12; color: white; }
         .save-btn { background: #28a745; color: white; }
+        .tab-btn { 
+            background: #007BFF; 
+            color: white;
+            margin: 5px;
+        }
+        .tab-btn.active {
+            background: #0056b3;
+        }
+        .history-item {
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+        #master-timetable {
+            overflow-x: auto;
+        }
     </style>
 </head>
 <body>
+    <div class="tab-buttons">
+        <button class="btn tab-btn active" onclick="showTab('daily')">Daily View</button>
+        <button class="btn tab-btn" onclick="showTab('master')">Master Timetable</button>
+    </div>
 
-    <h2>College Timetable - <span id="current-day"></span></h2>
-    
-    
-    <table id="timetable">
-        <thead>
-            <tr id="table-header"></tr>
-        </thead>
-        <tbody id="table-body"></tbody>
-    </table>
+    <div id="daily-view">
+        <h2>Daily Timetable - <span id="current-day"></span></h2>
+        <table id="timetable">
+            <thead>
+                <tr id="table-header"></tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
 
-    <button id="editButton" class="btn edit-btn">Edit</button>
-    <button id="saveButton" class="btn save-btn" disabled>Save</button>
+        <button id="editButton" class="btn edit-btn">Edit</button>
+        <button id="saveButton" class="btn save-btn" disabled>Save</button>
+    </div>
+
+    <div id="master-view" style="display: none;">
+        <h2>Master Timetable</h2>
+        <div id="master-timetable"></div>
+    </div>
+
+    <div class="container">
+        <div class="history-section">
+            <h2>Change History</h2>
+            <div id="history-list"></div>
+        </div>
+
+        <div class="suggestions-section">
+            <h2>Staff Suggestions</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Staff Name</th>
+                        <th>Suggestion</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody id="suggestions-table"></tbody>
+            </table>
+        </div>
+    </div>
 
     <script>
+        if (!localStorage.getItem("admin_logged_in")) {
+            window.location.href = "login_admin.html";
+        }
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            if (tab === 'daily') {
+                document.getElementById('daily-view').style.display = 'block';
+                document.getElementById('master-view').style.display = 'none';
+                document.querySelector('.tab-btn:first-child').classList.add('active');
+            } else {
+                document.getElementById('daily-view').style.display = 'none';
+                document.getElementById('master-view').style.display = 'block';
+                document.querySelector('.tab-btn:last-child').classList.add('active');
+                loadMasterTimetable();
+            }
+        }
+
+        function loadMasterTimetable() {
+            fetch("https://sabstimetable.onrender.com/api/master-timetable")
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('master-timetable');
+                    let html = '<table>';
+                    
+                    // Header row with days
+                    html += '<tr><th>Course/Time</th>';
+                    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].forEach(day => {
+                        html += `<th>${day}</th>`;
+                    });
+                    html += '</tr>';
+
+                    // Data rows
+                    data.forEach(course => {
+                        html += `<tr><td>${course.course}</td>`;
+                        course.schedule.forEach(day => {
+                            html += `<td>${day.subjects.join('<br>')}</td>`;
+                        });
+                        html += '</tr>';
+                    });
+
+                    html += '</table>';
+                    container.innerHTML = html;
+                })
+                .catch(error => console.error("Error loading master timetable:", error));
+        }
 
         document.addEventListener("DOMContentLoaded", function () {
             const currentDay = new Date().toLocaleDateString("en-US", { weekday: "long" });
-            document.getElementById("current-day").textContent = currentDay; // Display current day
+            document.getElementById("current-day").textContent = currentDay;
 
-            fetch("https://sabstimetable.onrender.com/api/timetable/today") // Fetch today's timetable
+            loadDailyTimetable();
+            loadHistory();
+            loadSuggestions();
+        });
+
+        function loadDailyTimetable() {
+            fetch("https://sabstimetable.onrender.com/api/timetable/today")
                 .then(response => response.json())
                 .then(data => {
                     if (data.length === 0) {
@@ -71,111 +181,104 @@
                     const tableHeader = document.getElementById("table-header");
                     const tableBody = document.getElementById("table-body");
 
-                    tableHeader.innerHTML = ""; // Clear headers
-                    tableBody.innerHTML = ""; // Clear table body
+                    tableHeader.innerHTML = "";
+                    tableBody.innerHTML = "";
 
-                    let columns = Object.keys(data[0]); // Get column names
+                    let columns = Object.keys(data[0]);
 
-                    // Create table headers
                     columns.forEach(col => {
                         const th = document.createElement("th");
-                        th.textContent = col.replace(/_/g, " "); // Format column names
+                        th.textContent = col.replace(/_/g, " ");
                         tableHeader.appendChild(th);
                     });
 
-                    // Insert data into the table
                     data.forEach(row => {
                         const tr = document.createElement("tr");
                         columns.forEach(col => {
                             const td = document.createElement("td");
                             td.textContent = row[col];
-                            td.setAttribute("contenteditable", "false"); // Initially not editable
+                            td.setAttribute("contenteditable", "false");
                             tr.appendChild(td);
                         });
                         tableBody.appendChild(tr);
                     });
-
-                    // Enable editing mode
-                    document.getElementById("editButton").addEventListener("click", () => {
-                        document.querySelectorAll("#table-body td").forEach(td => {
-                            td.setAttribute("contenteditable", "true");
-                        });
-                        document.getElementById("saveButton").disabled = false;
-                        document.getElementById("editButton").disabled = true;
-                    });
-
-                    // Save edited data
-                    document.getElementById("saveButton").addEventListener("click", () => {
-                        let updatedData = [];
-                        document.querySelectorAll("#table-body tr").forEach(row => {
-                            let rowData = {};
-                            let cells = row.querySelectorAll("td");
-
-                            cells.forEach((cell, index) => {
-                                rowData[columns[index]] = cell.textContent.trim();
-                            });
-
-                            updatedData.push(rowData);
-                        });
-
-                        console.log("🔍 Sending Data:", JSON.stringify(updatedData, null, 2)); // Debug
-                        
-                        // Send updated data to the server
-                        fetch("https://sabstimetable.onrender.com/api/timetable", {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(updatedData)
-                        })
-                        .then(response => response.json())
-                        .then(result => {
-                            alert(result.message);
-                            document.getElementById("saveButton").disabled = true;
-                            document.getElementById("editButton").disabled = false;
-                            document.querySelectorAll("#table-body td").forEach(td => {
-                                td.setAttribute("contenteditable", "false");
-                            });
-                        })
-                        .catch(error => console.error("Error updating timetable:", error));
-                    });
                 })
-                .catch(error => console.error("❌ Error fetching data:", error));
-        });
-    </script>
-    <h2>Admin - Staff Suggestions</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Staff Name</th>
-                <th>Suggestion</th>
-            </tr>
-        </thead>
-        <tbody id="suggestions-table"></tbody>
-    </table>
-    
-    <script>
-        
-            if (!localStorage.getItem("admin_logged_in")) {
-                window.location.href = "login_admin.html"; // Redirect to login if not logged in
-            }
-        
-           
-        
-        function fetchSuggestions() {
+                .catch(error => console.error("Error fetching data:", error));
+        }
+
+        function loadHistory() {
+            fetch("https://sabstimetable.onrender.com/api/timetable/history")
+                .then(response => response.json())
+                .then(data => {
+                    const historyList = document.getElementById("history-list");
+                    historyList.innerHTML = data.map(item => `
+                        <div class="history-item">
+                            <strong>${new Date(item.timestamp).toLocaleString()}</strong><br>
+                            ${item.change_description}
+                        </div>
+                    `).join('');
+                })
+                .catch(error => console.error("Error loading history:", error));
+        }
+
+        function loadSuggestions() {
             fetch("https://sabstimetable.onrender.com/api/suggestions")
                 .then(response => response.json())
                 .then(data => {
                     const table = document.getElementById("suggestions-table");
-                    table.innerHTML = "";
-                    data.forEach(suggestion => {
-                        table.innerHTML += `<tr><td>${suggestion.staff_name}</td><td>${suggestion.message}</td></tr>`;
-                    });
+                    table.innerHTML = data.map(suggestion => `
+                        <tr>
+                            <td>${suggestion.staff_name}</td>
+                            <td>${suggestion.message}</td>
+                            <td>${new Date(suggestion.created_at).toLocaleString()}</td>
+                        </tr>
+                    `).join('');
                 })
-                .catch(error => console.error("❌ Error fetching suggestions:", error));
+                .catch(error => console.error("Error fetching suggestions:", error));
         }
 
-        fetchSuggestions();
-        setInterval(fetchSuggestions, 10000); // Refresh every 10 seconds
-    </script>
+        document.getElementById("editButton").addEventListener("click", () => {
+            document.querySelectorAll("#table-body td").forEach(td => {
+                td.setAttribute("contenteditable", "true");
+            });
+            document.getElementById("saveButton").disabled = false;
+            document.getElementById("editButton").disabled = true;
+        });
 
+        document.getElementById("saveButton").addEventListener("click", () => {
+            let updatedData = [];
+            document.querySelectorAll("#table-body tr").forEach(row => {
+                let rowData = {};
+                let cells = row.querySelectorAll("td");
+                let columns = Array.from(document.querySelectorAll("#table-header th"))
+                    .map(th => th.textContent.replace(/ /g, "_"));
+
+                cells.forEach((cell, index) => {
+                    rowData[columns[index]] = cell.textContent.trim();
+                });
+
+                updatedData.push(rowData);
+            });
+
+            fetch("https://sabstimetable.onrender.com/api/timetable", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updatedData)
+            })
+            .then(response => response.json())
+            .then(result => {
+                alert(result.message);
+                document.getElementById("saveButton").disabled = true;
+                document.getElementById("editButton").disabled = false;
+                document.querySelectorAll("#table-body td").forEach(td => {
+                    td.setAttribute("contenteditable", "false");
+                });
+                loadHistory();
+            })
+            .catch(error => console.error("Error updating timetable:", error));
+        });
+
+        setInterval(loadSuggestions, 10000);
+    </script>
 </body>
 </html>
